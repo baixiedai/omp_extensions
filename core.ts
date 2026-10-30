@@ -224,7 +224,8 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 				const content = redactMemorySecrets(rest.join(" "));
 				const result = await update(ctx, memory => {
 					if (activeFacts(memory).some(fact => normalize(fact.content) === normalize(content))) return { added: false, evicted: 0 };
-					const fact: MemoryFact = { id: randomUUID(), content, category: "manual", confidence: 1, source: sessionId, created_at: new Date().toISOString(), status: "active", superseded_by: null, expected_valid_days: null, confirmed_at: new Date().toISOString(), reviewed_at: null, review_status: null, review_reason: null, source_error: null };
+					const now = new Date().toISOString();
+					const fact: MemoryFact = { id: randomUUID(), content, category: "manual", confidence: 1, source: sessionId, created_at: now, status: "active", superseded_by: null, expected_valid_days: null, confirmed_at: now, reviewed_at: null, review_status: null, review_reason: null, source_error: null };
 					memory.facts.push(fact); recordEvent(memory, fact.id, "manual_add", sessionId);
 					return { added: true, evicted: enforceFactCapacity(memory, config, sessionId) };
 				});
@@ -264,7 +265,6 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 				ctx.ui.notify(forgotten ? "已归档匹配的项目记忆" : "未找到活动或候选记忆", "info"); return;
 			}
 			const config = await projectConfig(ctx.cwd, isEnoent); const memory = await read(ctx); const facts = activeFacts(memory); const summaries = activeSummaries(memory);
-			const selected = selectForInjection(facts, config, countTokens, memory.conflicts.filter(pair => facts.some(fact => fact.id === pair.factId) && facts.some(fact => fact.id === pair.otherId)).map(pair => ({ fact_id: pair.factId, other_id: pair.otherId })), summaries, action === "search" ? rest.join(" ") : "");
 			if (action === "show") { ctx.ui.notify(JSON.stringify({ project: memory.project, history: memory.history, facts, conflicts: memory.conflicts }, null, 2), "info"); return; }
 			if (action === "history") { ctx.ui.notify(JSON.stringify({ facts: memory.facts.filter(fact => ["superseded", "archived"].includes(fact.status)), summaries: [...Object.entries(memory.project), ...Object.entries(memory.history)] }, null, 2), "info"); return; }
 			if (action === "events") { ctx.ui.notify(JSON.stringify(memory.events, null, 2), "info"); return; }
@@ -277,6 +277,8 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 			}
 			if (action === "candidates") { ctx.ui.notify(JSON.stringify(facts.filter(fact => fact.status === "candidate").concat(memory.facts.filter(fact => fact.status === "candidate")), null, 2), "info"); return; }
 			if (action === "review") { ctx.ui.notify(JSON.stringify(facts.filter(fact => fact.review_status === "pending"), null, 2), "info"); return; }
+			const conflicts = memory.conflicts.filter(pair => facts.some(fact => fact.id === pair.factId) && facts.some(fact => fact.id === pair.otherId)).map(pair => ({ fact_id: pair.factId, other_id: pair.otherId }));
+			const selected = selectForInjection(facts, config, countTokens, conflicts, summaries);
 			ctx.ui.notify(`项目记忆 ${facts.length}/${config.maxFacts} 条；摘要 ${summaries.length} 条；候选 ${memory.facts.filter(fact => fact.status === "candidate").length} 条；待处理消息 ${memory.pending.length} 条；注入 ${selected.summariesSelected} 条摘要、${selected.selected} 条事实，约 ${selected.tokens}/${config.injectionTokens} token，未注入 ${selected.omitted} 条事实`, "info");
 		},
 	});

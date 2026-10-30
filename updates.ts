@@ -93,11 +93,12 @@ export function applyUpdate(data: MemoryDocument, update: Item, pendingIds: stri
 			inserted.push({ id: existing.id }); continue;
 		}
 		const id = randomUUID();
+		const sourceError = nonempty(item.sourceError);
 		const fact: MemoryFact & { replacementCandidates?: Array<{ oldId: string; reason: string }> } = {
 			id, content, category, confidence, source: sessionId, created_at: now, status: "active", superseded_by: null,
 			expected_valid_days: validDays(item.expected_valid_days) ? Math.min(item.expected_valid_days, Math.floor(config.staleDays * config.staleMaxLifetimeMultiplier)) : null,
 			confirmed_at: null, reviewed_at: null, review_status: null, review_reason: null,
-			source_error: nonempty(item.sourceError) ? redactMemorySecrets(nonempty(item.sourceError)!) : null,
+			source_error: sourceError ? redactMemorySecrets(sourceError) : null,
 		};
 		data.facts.push(fact); inserted.push({ id });
 		recordEvent(data, id, "extract", sessionId);
@@ -149,7 +150,7 @@ export function applyUpdate(data: MemoryDocument, update: Item, pendingIds: stri
 	result.evicted = enforceFactCapacity(data, config, sessionId, replacementIds);
 	if (config.consolidationEnabled) for (const raw of consolidations.slice(0, config.consolidationMaxGroups)) {
 		const item = object(raw); const merged = projectFact(item?.consolidated); const ids = item?.sourceIds;
-		if (!merged || !validConfidence(merged.confidence) || merged.confidence < config.confidenceThreshold || !Array.isArray(ids) || ids.length < 2 || ids.length > config.consolidationMaxSources || !ids.every(id => typeof id === "string")) continue;
+		if (!merged || merged.confidence < config.confidenceThreshold || !Array.isArray(ids) || ids.length < 2 || ids.length > config.consolidationMaxSources || !ids.every(id => typeof id === "string")) continue;
 		const active = data.facts.filter(fact => fact.status === "active"); const category = nonempty(merged.category) ?? "other";
 		if (new Set(ids).size !== ids.length || active.filter(fact => fact.category === category).length < config.consolidationMinFacts || !ids.every(id => active.some(fact => fact.id === id && fact.category === category))) continue;
 		const content = redactMemorySecrets(nonempty(merged.content)!);
