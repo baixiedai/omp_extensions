@@ -3,6 +3,7 @@ import { isEnoent, prompt, withFileLock } from "@oh-my-pi/pi-utils";
 import { complete } from "@oh-my-pi/pi-ai";
 import { rename } from "node:fs/promises";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { redactMemorySecrets } from "@oh-my-pi/pi-coding-agent/memory-backend/redact";
 import { createProjectMemory } from "./core";
 
 export default function projectMemory(pi: ExtensionAPI): void {
@@ -22,6 +23,13 @@ export default function projectMemory(pi: ExtensionAPI): void {
 			text: response.content.map(block => block.type === "text" ? block.text : "").filter(Boolean).join("\n"),
 			stopReason: response.stopReason,
 			contentTypes: response.content.map(block => block.type),
+			usage: {
+				input: response.usage.input,
+				output: response.usage.output,
+				cacheRead: response.usage.cacheRead,
+				cacheWrite: response.usage.cacheWrite,
+				totalTokens: response.usage.totalTokens,
+			},
 			errorMessage: response.errorMessage ? redactMemorySecrets(response.errorMessage) : undefined,
 			errorClassificationMessage: response.errorClassificationMessage ? redactMemorySecrets(response.errorClassificationMessage) : undefined,
 			errorStatus: response.errorStatus,

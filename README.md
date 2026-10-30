@@ -31,6 +31,7 @@ omp plugin install github:baixiedai/omp_extensions#main
 在 OMP 中执行：
 
 - `/project-memory status`：查看记忆与待处理消息数量。
+- `/project-memory usage`：查看 OMP 记录的当前会话用量、项目记忆提取的累计用量、合计和提取占比。OMP 会话总量来自 OMP 的 `getUsageStatistics()`；扩展的独立模型请求不会自动计入 OMP 统计，因此按 OMP 会话 ID 单独保存提供方返回的用量。若提供方没有返回用量，扩展无法精确计入。OMP 统计按其会话记录口径累计，可能包含切换分支前的记录。
 - `/project-memory show`：查看活动记忆和 ID。
 - `/project-memory injected`：查看当前会话最近一次提交给 OMP 的完整记忆注入快照、时间和 token 估算。
 - `/project-memory history`：查看已替换、已归档的事实以及旧摘要。

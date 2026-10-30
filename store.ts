@@ -8,6 +8,8 @@ import type { MemoryFact, MemorySummary } from "./policy";
 export type ProjectPending = { id: string; sessionId: string; text: string; queuedAt: number; urgent: boolean };
 export type MemoryEvent = { id: string; factId: string; event: string; source: string; reason?: string; createdAt: string };
 export type MemoryConflict = { factId: string; otherId: string; reason: string; createdAt: string };
+export type MemoryTokenUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number };
+export type SessionMemoryUsage = MemoryTokenUsage & { calls: number };
 export type MemoryDocument = {
 	version: "2.0";
 	factStoreVersion?: "markdown-v1";
@@ -19,6 +21,7 @@ export type MemoryDocument = {
 	watermarks: Record<string, { timestamp: number; lastSeen: number }>;
 	facts: Array<MemoryFact & { replacementCandidates?: Array<{ oldId: string; reason: string }> }>;
 	pending: ProjectPending[];
+	usageBySession: Record<string, SessionMemoryUsage>;
 	conflicts: MemoryConflict[];
 	events: MemoryEvent[];
 };
@@ -40,7 +43,7 @@ export async function memoryFile(cwd: string, isEnoent: (error: unknown) => bool
 }
 
 export function emptyMemory(): MemoryDocument {
-	return { version: "2.0", revision: 0, lastUpdated: "", project: {}, history: {}, watermarks: {}, facts: [], pending: [], conflicts: [], events: [] };
+	return { version: "2.0", revision: 0, lastUpdated: "", project: {}, history: {}, watermarks: {}, facts: [], pending: [], usageBySession: {}, conflicts: [], events: [] };
 }
 
 function factsDirectory(path: string): string { return join(dirname(path), "facts"); }

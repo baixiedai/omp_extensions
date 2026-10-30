@@ -6,7 +6,7 @@ import { escapeXmlText } from "@oh-my-pi/pi-utils";
 import { DEFAULT_CONFIG, nextEligibleAt, normalize, parseResponse, rankFactsForQuery, readConfig, searchFactsWithFts5, selectForInjection, staleCandidates, type MemoryConfig, type MemoryFact } from "./policy";
 import { applyUpdate, enforceFactCapacity } from "./updates";
 import { detectSignals, isTrivialAcknowledgement } from "./signals";
-import { addPending, activeFacts, activeSummaries, inspectMemory, memoryFile, recordEvent, withMemory, type FileLocker, type MemoryDocument, type ProjectPending, type ReplaceFile } from "./store";
+import { addPending, activeFacts, activeSummaries, inspectMemory, memoryFile, recordEvent, withMemory, type FileLocker, type MemoryDocument, type MemoryTokenUsage, type ProjectPending, type ReplaceFile, type SessionMemoryUsage } from "./store";
 import extractionPrompt from "./memory-update.md" with { type: "text" };
 import extractionInput from "./memory-update-input.md" with { type: "text" };
 
@@ -108,7 +108,7 @@ function pendingGroups(memory: MemoryDocument, config: MemoryConfig): Array<{ id
 	}).sort((a, b) => a.deadline - b.deadline);
 }
 
-export type MemoryCompletionResult = { text: string; stopReason: string; contentTypes: string[]; errorMessage?: string; errorClassificationMessage?: string; errorStatus?: number };
+export type MemoryCompletionResult = { text: string; stopReason: string; contentTypes: string[]; usage?: MemoryTokenUsage; errorMessage?: string; errorClassificationMessage?: string; errorStatus?: number };
 export type MemoryCompletion = (ctx: ExtensionContext, systemPrompt: string, inputText: string) => Promise<MemoryCompletionResult>;
 
 export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string) => number, renderPrompt: (template: string, context: Record<string, string>) => string, isEnoent: (error: unknown) => boolean, lock: FileLocker, replaceFile: ReplaceFile, completeMemory: MemoryCompletion): void {
@@ -140,6 +140,19 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 				stale: escapeXmlText(JSON.stringify(stale)), hints: escapeXmlText(JSON.stringify(hints)), consolidationEnabled: String(config.consolidationEnabled),
 			});
 			const completion = await completeMemory(ctx, systemPrompt, inputText);
+			const completionUsage = completion.usage;
+			if (completionUsage) {
+				await update(ctx, memory => {
+					const usage = memory.usageBySession[group.id] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, calls: 0 } satisfies SessionMemoryUsage;
+					usage.input += completionUsage.input;
+					usage.output += completionUsage.output;
+					usage.cacheRead += completionUsage.cacheRead;
+					usage.cacheWrite += completionUsage.cacheWrite;
+					usage.totalTokens += completionUsage.totalTokens;
+					usage.calls++;
+					memory.usageBySession[group.id] = usage;
+				});
+			}
 			if (completion.stopReason === "error" || completion.errorMessage) {
 				const detail = completion.errorClassificationMessage ?? completion.errorMessage ?? "provider returned an error";
 				const status = completion.errorStatus === undefined ? "" : ` HTTP ${completion.errorStatus}`;
@@ -209,7 +222,7 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 	});
 	pi.on("session_shutdown", async (_event, ctx) => { if (timer) ctx.clearTimer(timer); });
 	pi.registerCommand("project-memory", {
-		description: "项目记忆：status、show、injected、history、events、search、candidates、review、sync、add、update、approve、keep、forget",
+		description: "项目记忆：status、usage、show、injected、history、events、search、candidates、review、sync、add、update、approve、keep、forget",
 		handler: async (args, ctx) => {
 			const [action, ...rest] = args.trim().split(/\s+/); const sessionId = ctx.sessionManager.getSessionId();
 			if (action === "injected") {
@@ -219,6 +232,15 @@ export function createProjectMemory(pi: ExtensionAPI, countTokens: (text: string
 				return;
 			}
 			if (action === "sync") { await flush(ctx, true); return; }
+			if (action === "usage") {
+				const memory = await read(ctx);
+				const extensionUsage = memory.usageBySession[sessionId] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, calls: 0 };
+				const ompUsage = ctx.sessionManager.getUsageStatistics();
+				const combinedTokens = ompUsage.totalTokens + extensionUsage.totalTokens;
+				const share = combinedTokens > 0 ? (extensionUsage.totalTokens / combinedTokens * 100).toFixed(1) : "0.0";
+				ctx.ui.notify(`OMP 会话记录：${ompUsage.totalTokens} token（输入 ${ompUsage.input}，输出 ${ompUsage.output}，缓存读 ${ompUsage.cacheRead}，缓存写 ${ompUsage.cacheWrite}）\n项目记忆提取：${extensionUsage.totalTokens} token（输入 ${extensionUsage.input}，输出 ${extensionUsage.output}，缓存读 ${extensionUsage.cacheRead}，缓存写 ${extensionUsage.cacheWrite}；${extensionUsage.calls} 次已统计请求）\n两者合计：${combinedTokens} token；提取占比：${share}%`, "info");
+				return;
+			}
 			if (action === "add" && rest.length) {
 				const config = await projectConfig(ctx.cwd, isEnoent);
 				const content = redactMemorySecrets(rest.join(" "));
