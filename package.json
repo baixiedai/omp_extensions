@@ -1,0 +1,9 @@
+{
+	"name": "omp-project-memory",
+	"version": "0.1.0",
+	"description": "Project-scoped long-term memory extension for Oh My Pi",
+	"type": "module",
+	"omp": {
+		"extensions": ["./index.ts"]
+	}
+}
